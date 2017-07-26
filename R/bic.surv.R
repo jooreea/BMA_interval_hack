@@ -2,7 +2,7 @@
 function (x, ...) 
 UseMethod("bic.surv")
 "bic.surv.data.frame" <-
-function (x, surv.t, cens, strict = FALSE, OR = 20, maxCol = 30, 
+function (x, surv.t, surv.t2 = NULL, cens, strict = FALSE, OR = 20, maxCol = 30, 
     prior.param = c(rep(0.5, ncol(x))), OR.fix = 2, nbest = 150, 
     factor.type = TRUE, factor.prior.adjust = FALSE, call = NULL, ...) 
 {
@@ -78,7 +78,7 @@ function (x, surv.t, cens, strict = FALSE, OR = 20, maxCol = 30,
         attributes(out)$names <- names(x)
         return(out)
     }
-    dropcols <- function(x, surv.t, cens, maxCols = 30) {
+    dropcols <- function(x, surv.t, surv.t2, cens, maxCols = 30) {
         vnames <- attributes(x)$names
         nvar <- length(vnames)
         isfac <- rep(FALSE, times = nvar)
@@ -94,8 +94,8 @@ function (x, surv.t, cens, strict = FALSE, OR = 20, maxCol = 30,
         for (i in 2:n.designx) if (isfac[designx[i]]) 
             designx.levels[i] <- sum(designx[1:i] == designx[i]) + 
                 1
-        x.coxph <- data.frame(mm[, -1], surv.t = surv.t, cens = cens)
-        cox.out <- coxph(Surv(surv.t, cens) ~ ., data = x.coxph, 
+        x.coxph <- data.frame(mm[, -1], surv.t = surv.t, surv.t2 = surv.t2, cens = cens)
+        cox.out <- coxph(Surv(surv.t,surv.t2,  cens) ~ ., data = x.coxph, 
             method = "breslow", iter.max = 30)
         while (length(cox.out$coefficients) > maxCol) {
             any.dropped <- TRUE
@@ -104,7 +104,7 @@ function (x, surv.t, cens, strict = FALSE, OR = 20, maxCol = 30,
             x.coxph <- x.coxph[, -(dropped - 1)]
             designx.levels <- designx.levels[-dropped]
             designx <- designx[-dropped]
-            cox.out <- coxph(Surv(surv.t, cens) ~ ., data = x.coxph, 
+            cox.out <- coxph(Surv(surv.t, surv.t2, cens) ~ ., data = x.coxph, 
                 method = "breslow", iter.max = 30)
         }
         remaining.vars <- unique(designx[-1])
@@ -155,6 +155,7 @@ function (x, surv.t, cens, strict = FALSE, OR = 20, maxCol = 30,
     if (length(omitted) > 0) {
         x <- x.omit
         surv.t <- surv.t[-omitted]
+        surv.t2 <- surv.t2[-omitted]
         cens <- cens[-omitted]
         warning(paste("There were ", length(omitted), "records deleted due to NA's"))
     }
@@ -163,13 +164,13 @@ function (x, surv.t, cens, strict = FALSE, OR = 20, maxCol = 30,
     fn <- factor.names(x)
     factors <- !all(unlist(lapply(fn, is.null)))
     if (factors) {
-        cdf <- cbind.data.frame(y = surv.t, x)
+        cdf <- cbind.data.frame(y = surv.t, y2 = surv.t2, x)
         mm <- model.matrix(formula(cdf), data = cdf)[, -1, drop = FALSE]
         mmm <- data.frame(matrix(mm, nrow = nrow(mm), byrow = FALSE))
         names(mmm) <- dimnames(mm)[[2]]
         output.names <- names(mmm)
-        x.coxph <- data.frame(surv.t = surv.t, cens = cens, x)
-        cox.out <- coxph(Surv(surv.t, cens) ~ ., data = x.coxph, 
+        x.coxph <- data.frame(surv.t = surv.t, surv.t2 = surv.t2, cens = cens, x)
+        cox.out <- coxph(Surv(time = surv.t, time2 = surv.t2, cens) ~ ., data = x.coxph, 
             method = "breslow")
         cox.assign <- cox.out$assign
         for (tempi in length(cox.assign):1) {
@@ -213,7 +214,7 @@ function (x, surv.t, cens, strict = FALSE, OR = 20, maxCol = 30,
 
 
     xx <- data.frame()
-    xx <- dropcols(leaps.x, surv.t, cens, maxCol)
+    xx <- dropcols(leaps.x, surv.t, surv.t2, cens, maxCol)
     var.names <- xx$var.names
     remaining <- xx$remaining.vars
     leaps.x <- xx$mm
@@ -233,11 +234,11 @@ function (x, surv.t, cens, strict = FALSE, OR = 20, maxCol = 30,
     }
     xnames <- names(x)
     names(leaps.x) <- var.names
-    x.coxph <- data.frame(surv.t = surv.t, cens = cens, leaps.x)
-    cox.out <- coxph(Surv(surv.t, cens) ~ ., data = x.coxph, 
+    x.coxph <- data.frame(surv.t = surv.t, surv.t2 = surv.t2, cens = cens, leaps.x)
+    cox.out <- coxph(Surv(surv.t, surv.t2, cens) ~ ., data = x.coxph, 
         method = "breslow")
-    x.coxph.fac <- data.frame(surv.t = surv.t, cens = cens, x)
-    cox.assign <- coxph(Surv(surv.t, cens) ~ ., data = x.coxph.fac, 
+    x.coxph.fac <- data.frame(surv.t = surv.t, surv.t2 = surv.t2, cens = cens, x)
+    cox.assign <- coxph(Surv(surv.t, surv.t2, cens) ~ ., data = x.coxph.fac, 
         method = "breslow")$assign
     for (tempi in length(cox.assign):1) {
         cox.assign[[tempi + 1]] <- cox.assign[[tempi]]
@@ -293,8 +294,8 @@ function (x, surv.t, cens, strict = FALSE, OR = 20, maxCol = 30,
     for (k in (1:length(label))) {
         if (sum(which[k, ]) != 0) {
             x.coxph <- data.frame(x[, which[k, ], drop = FALSE], 
-                surv.t = surv.t, cens = cens)
-            cox.out <- coxph(Surv(surv.t, cens) ~ ., data = x.coxph, 
+                surv.t = surv.t, surv.t2 = surv.t2, cens = cens)
+            cox.out <- coxph(Surv(surv.t, surv.t2, cens) ~ ., data = x.coxph, 
                 iter.max = 30, method = "breslow")
             loglik[k] <- cox.out$loglik[2]
             size[k] <- length(cox.out$coef)
@@ -401,65 +402,143 @@ function (f, data, strict = FALSE, OR = 20, maxCol = 30, prior.param = c(rep(0.5
     call = NULL, ...) 
 {
     cl <- match.call()
-    tms <- terms(f, data = data)
-    fmatrix <- attr(tms, "factors")
-    tms.order <- attr(tms, "order")
-    tms.labels <- attr(tms, "term.labels")
-    mm <- model.matrix(tms, data = data)
-    assn <- attr(mm, "assign")
-    nterms <- max(assn)
-    datalist <- eval(attr(tms, "variables"), envir = data)
-    nvar <- nrow(fmatrix) - 1
-    isvarfac <- rep(NA, times = nvar)
-    for (i in 1:nvar) isvarfac[i] <- is.factor(datalist[[i + 
-        1]])
-    istermfac <- rep(NA, times = nterms)
-    for (i in 1:nterms) {
+    if (check_for_censor_type(f) == "interval censored, time and time2") {
+      tms <- terms(f, data, specials = NULL)
+      fmatrix <- attr(tms, "factors")
+      tms.order <- attr(tms, "order")
+      tms.labels <- attr(tms, "term.labels")
+      mm <- model.matrix(tms, data = data)
+      assn <- attr(mm, "assign")
+      nterms <- max(assn)
+      datalist <- eval(attr(tms, "variables"), envir = data)
+      nvar <- nrow(fmatrix) - 1
+      
+      isvarfac <- rep(NA, times = nvar)
+      
+      for (i in 1:nvar) isvarfac[i] <- is.factor(datalist[[i + 1]])
+      
+      istermfac <- rep(NA, times = nterms)
+      
+      for (i in 1:nterms) {
         cterms <- fmatrix[-1, i] == 1
         istermfac[i] <- sum(isvarfac[cterms] == FALSE) == 0
-    }
-    surv.t.name <- all.vars(f)[1]
-    cens.name <- all.vars(f)[2]
-    moddata <- data.frame(rep(NA, times = dim(mm)[1]))
-    cnames <- NULL
-    for (i in 1:nterms) {
+      }
+      
+      surv.t.name <- all.vars(f)[1]
+      surv.t.name2 <- all.vars(f)[2]  
+      cens.name <- all.vars(f)[3]
+      moddata <- data.frame(rep(NA, times = dim(mm)[1]))
+      cnames <- NULL
+      
+      cnames <- NULL
+      for (i in 1:nterms) {
         if (istermfac[i]) {
-            if (tms.order[i] == 1) {
-                moddata <- cbind(moddata, datalist[[i + 1]])
-                cnames <- c(cnames, tms.labels[i])
-            }
-            else {
-                sel <- assn == i
-                nlev <- sum(sel)
-                newfac.index <- (mm[, sel] %*% cbind(1:nlev)) + 
-                  1
-                facnames <- c("ref", colnames(mm)[sel])
-                newfac <- facnames[newfac.index]
-                newfac <- factor(newfac)
-                moddata <- cbind(moddata, newfac)
-                cnames <- c(cnames, paste(tms.labels[i], "..", 
-                  sep = ""))
-            }
+          if (tms.order[i] == 1) {
+            moddata <- cbind(moddata, datalist[[i + 1]])
+            cnames <- c(cnames, tms.labels[i])
+          }
+          else {
+            sel <- assn == i
+            nlev <- sum(sel)
+            newfac.index <- (mm[, sel] %*% cbind(1:nlev)) + 
+              1
+            facnames <- c("ref", colnames(mm)[sel])
+            newfac <- facnames[newfac.index]
+            newfac <- factor(newfac)
+            moddata <- cbind(moddata, newfac)
+            cnames <- c(cnames, paste(tms.labels[i], "..", 
+                                      sep = ""))
+          }
         }
         else {
-            sel <- assn == i
-            moddata <- cbind(moddata, mm[, sel])
-            cnames <- c(cnames, colnames(mm)[sel])
+          sel <- assn == i
+          moddata <- cbind(moddata, mm[, sel])
+          cnames <- c(cnames, colnames(mm)[sel])
         }
+      }
+      
+      moddata <- moddata[, -1]
+      cnames <- gsub(":", ".", cnames)
+      moddata <- cbind(moddata, datalist[[1]][, 1], datalist[[1]][,2], datalist[[1]][,3])
+      colnames(moddata) <- c(cnames, surv.t.name, surv.t.name2, cens.name)
+      nv <- ncol(moddata) - 3
+      surv.t <- moddata[, nv + 1]
+      surv.t2 <- moddata[, nv + 2]
+      cens <- moddata[, nv + 3]
+      x <- moddata[, 1:nv]
+      bic.surv(x, surv.t, surv.t2, cens, strict = FALSE, OR = OR, maxCol = maxCol, 
+               prior.param = prior.param, OR.fix = OR.fix, nbest = nbest, 
+               factor.type = factor.type, factor.prior.adjust = factor.prior.adjust, 
+               call = cl)
+      
+    } else {
+      tms <- terms(f, data, specials = NULL)
+      fmatrix <- attr(tms, "factors")
+      tms.order <- attr(tms, "order")
+      tms.labels <- attr(tms, "term.labels")
+      mm <- model.matrix(tms, data = data)
+      assn <- attr(mm, "assign")
+      nterms <- max(assn)
+      datalist <- eval(attr(tms, "variables"), envir = data)
+      nvar <- nrow(fmatrix) - 1
+      
+      isvarfac <- rep(NA, times = nvar)
+      
+      for (i in 1:nvar) isvarfac[i] <- is.factor(datalist[[i + 1]])
+      
+      istermfac <- rep(NA, times = nterms)
+      
+      for (i in 1:nterms) {
+        cterms <- fmatrix[-1, i] == 1
+        istermfac[i] <- sum(isvarfac[cterms] == FALSE) == 0
+      }
+      
+      surv.t.name <- all.vars(f)[1]
+      cens.name <- all.vars(f)[2]
+      moddata <- data.frame(rep(NA, times = dim(mm)[1]))
+      cnames <- NULL
+      
+      cnames <- NULL
+      for (i in 1:nterms) {
+        if (istermfac[i]) {
+          if (tms.order[i] == 1) {
+            moddata <- cbind(moddata, datalist[[i + 1]])
+            cnames <- c(cnames, tms.labels[i])
+          }
+          else {
+            sel <- assn == i
+            nlev <- sum(sel)
+            newfac.index <- (mm[, sel] %*% cbind(1:nlev)) + 
+              1
+            facnames <- c("ref", colnames(mm)[sel])
+            newfac <- facnames[newfac.index]
+            newfac <- factor(newfac)
+            moddata <- cbind(moddata, newfac)
+            cnames <- c(cnames, paste(tms.labels[i], "..", 
+                                      sep = ""))
+          }
+        }
+        else {
+          sel <- assn == i
+          moddata <- cbind(moddata, mm[, sel])
+          cnames <- c(cnames, colnames(mm)[sel])
+        }
+      }
+      
+      moddata <- moddata[, -1]
+      cnames <- gsub(":", ".", cnames)
+      moddata <- cbind(moddata, datalist[[1]][, 1], datalist[[1]][, 
+                                                                  2])
+      colnames(moddata) <- c(cnames, surv.t.name, cens.name)
+      nv <- ncol(moddata) - 2
+      surv.t <- moddata[, nv + 1]
+      cens <- moddata[, nv + 2]
+      x <- moddata[, 1:nv]
+      bic.surv(x, surv.t, surv.t2, cens, strict = FALSE, OR = OR, maxCol = maxCol, 
+               prior.param = prior.param, OR.fix = OR.fix, nbest = nbest, 
+               factor.type = factor.type, factor.prior.adjust = factor.prior.adjust, 
+               call = cl)  
     }
-    moddata <- moddata[, -1]
-    cnames <- gsub(":", ".", cnames)
-    moddata <- cbind(moddata, datalist[[1]][, 1], datalist[[1]][, 
-        2])
-    colnames(moddata) <- c(cnames, surv.t.name, cens.name)
-    nv <- ncol(moddata) - 2
-    surv.t <- moddata[, nv + 1]
-    cens <- moddata[, nv + 2]
-    x <- moddata[, 1:nv]
-    bic.surv(x, surv.t, cens, strict = FALSE, OR = OR, maxCol = maxCol, 
-        prior.param = prior.param, OR.fix = OR.fix, nbest = nbest, 
-        factor.type = factor.type, factor.prior.adjust = factor.prior.adjust, 
-        call = cl)
 }
 "bic.surv.matrix" <-
 function (x, surv.t, cens, strict = FALSE, OR = 20, maxCol = 30, 
